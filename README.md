@@ -17,3 +17,6 @@ Implemented futures yet:
   * freeze a row
   * conditional formatting  (beginsWith, expression)
   * save as *.xlsx
+
+Requirements:
+ * Python 2.4
