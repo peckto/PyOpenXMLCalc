@@ -19,4 +19,4 @@ Implemented futures yet:
   * save as *.xlsx
 
 Requirements:
- * Python 2.4
+ * Python 2.4 - 2.6
