@@ -1,5 +1,6 @@
 import re
 import time
+import sys
 from xml.dom.minidom import *
 from zipfile import *
 
@@ -48,21 +49,41 @@ class OP(object):
             target = target.replace(number,'X.')
         return self.types[target]
 
-    def get_number(self,text):
-        m = re.search('\d+\.?\d*',text)
-        if m:
-            return m.group(0)
+    def get_number(self,ref):
+        out = re.search('\d+\.?\d*',ref)
+        if out:
+            return out.group(0)
         else:
             return None
 
-    def get_Text(self,text):
-        return re.search('[A-Z]+',text).group(0)
+    def get_text(self,ref):
+        return ref.replace(self.get_number(ref),'')
 
     def toxml(self,encoding):
         return self.root.toxml(encoding=encoding)
 
     def toprettyxml(self,encoding):
         return self.root.toprettyxml(encoding=encoding)
+    
+    def getInt4CN(self,CN):
+        """translate CN in integer"""
+        l = list(CN)
+        l.reverse()
+        all = 0
+        for i in range(len(l)):
+            all+=ord(l[i])*(i+1)
+        return all
+
+    def compCN(self,CN1,CN2):
+        """compare self.startCN to CN.
+
+        CN > CN2 """
+        i1 = self.getInt4CN(CN2)
+        i2 = self.getInt4CN(CN1)
+        if i2 > i1:
+            return True
+        else:
+            return False
 
 class Content_Types(OP):
     def __init__(self,f=None):
@@ -78,7 +99,10 @@ class Content_Types(OP):
 
     def _open(self,f):
         """parse a axisting Content_Types xml"""
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.types = self.root.getElementsByTagName('Types')[0]
 
     def getOverrides(self):
@@ -117,7 +141,10 @@ class Relationships(OP):
             self.root.appendChild(self.relationships)
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.relationships = self.root.getElementsByTagName('Relationships')[0]
         
     def new_relationship(self,target):
@@ -190,7 +217,10 @@ class App(OP):
             self.root.appendChild(self.properties)
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.properties = self.root.getElementsByTagName('Properties')[0]
         self.totalTime = self.properties.getElementsByTagName('TotalTime')[0]
         self.application = self.properties.getElementsByTagName('Application')[0]
@@ -281,10 +311,13 @@ class Sheet(OP):
     #        self.pageMargins.setAttribute('footer','0.3')
     #        self.worksheet.appendChild(self.pageMargins)
             self.writeEngine = 'inlineStr'
-            self.dimensionRef = Ref('A1')
+            self.dimensionRef = Sqref('A1')
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.worksheet = self.root.getElementsByTagName('worksheet')[0]
         self.dimension = self.worksheet.getElementsByTagName('dimension')[0]
         self.sheetViews = self.worksheet.getElementsByTagName('sheetViews')[0]
@@ -296,7 +329,7 @@ class Sheet(OP):
         self.tableParts = None
         self.sheetData = self.worksheet.getElementsByTagName('sheetData')[0]
         self.writeEngine = 'sharedStrings'
-        self.dimensionRef = Ref(self.dimension.getAttribute('ref'))
+        self.dimensionRef = Sqref(*self.dimension.getAttribute('ref').split(':'))
         tableParts = self.worksheet.getElementsByTagName('tableParts')
         if tableParts:
             self.tableParts = tableParts[0]
@@ -327,8 +360,8 @@ class Sheet(OP):
             sheetView.appendChild(selection)
         else:
             selection = selection[0]
-        selection.setAttribute('activeCell',ref.start)
-        selection.setAttribute('sqref',ref.start)
+        selection.setAttribute('activeCell',ref.ref)
+        selection.setAttribute('sqref',ref.ref)
 
     def getSelectedCell(self):
         """get the selected Cell Ref in sheet"""
@@ -373,8 +406,8 @@ class Sheet(OP):
 #        self.updateCount(self.tableParts)
 
     def get_row(self,ref):
-        if ref.startRowID in self.rows:
-            return self.rows[ref.startRowID]
+        if ref.rowID in self.rows:
+            return self.rows[ref.rowID]
         else:
             return self.new_row(ref)
 
@@ -385,21 +418,21 @@ class Sheet(OP):
            * insertBefore that row"""
         row = self.root.createElement('row')
 #        row.setAttribute('spans','1:1') # <- ignore
-        row.setAttribute('r',str(ref.startRowID))
+        row.setAttribute('r',str(ref.rowID))
         nextRowID = self.getNextRowID(ref)
         if nextRowID == -1:
             self.sheetData.appendChild(row)
         else:
             self.sheetData.insertBefore(row,self.rows[nextRowID])
-        self.rows[ref.startRowID] = row
+        self.rows[ref.rowID] = row
         return row
 
     def getNextRowID(self,ref):
-        """return the next higher existing row ID"""
+        """return the next higher existing row ID if there is no, return -1"""
         keys = self.rows.keys()
         keys.sort()
         for i in keys:
-            if i >= ref.startRowID:
+            if i >= ref.rowID:
                 return i
         return -1
         
@@ -407,10 +440,10 @@ class Sheet(OP):
     def getC(self,ref,row):
         """get c tag from row by ref or create a new"""
         for c in row.getElementsByTagName('c'):
-            if c.getAttribute('r') == ref.start:
+            if c.getAttribute('r') == ref.ref:
                 return c
         c = self.root.createElement('c')
-        c.setAttribute('r',ref.start)
+        c.setAttribute('r',ref.ref)
         row.appendChild(c)
         return c
 
@@ -423,7 +456,7 @@ class Sheet(OP):
             ref2.walk('right')
 
     def write(self,ref,text):
-        self.dimensionRef.max(ref)
+        self.dimensionRef.end.update(ref)
         if not text:
             text = ''
         if type(text) != int:
@@ -539,15 +572,15 @@ class Sheet(OP):
         if not row:
             return None
         for c in row.getElementsByTagName('c'):
-            if c.getAttribute('r') == ref.start:
+            if c.getAttribute('r') == ref.ref:
                 return c
-#        print 'no cell with ref = %s found!' %ref.start
+#        print 'no cell with ref = %s found!' %ref.ref
         return None
 
     def get_row4ref(self,ref):
         rows = self.sheetData.getElementsByTagName('row')
         for row in rows:
-            if ref.startRowID == int(row.getAttribute('r')):
+            if ref.rowID == int(row.getAttribute('r')):
                 return row
 
     def read(self,ref):
@@ -572,17 +605,17 @@ class Sheet(OP):
             return self.readExpressin(f)
 
     def readLine(self,ref=None):
-        """read the holse line on ref.startRowID, default self.cursor
+        """read the holse line on ref.rowID, default self.cursor
         length is constant = dimensionRef.countColumes()"""
-#        print 'Read line at RowID: %s' %ref.startRowID
+#        print 'Read line at RowID: %s' %ref.rowID
         length = self.dimensionRef.count_cols()
         if not ref:
             ref = self.cursor
-        if ref.startRowID > self.dimensionRef.endRowID:
+        if ref.rowID > self.dimensionRef.end.rowID:
 #            print 'Table END'
             return None
         line = list()
-        if ref.startRowID not in self.rows:
+        if ref.rowID not in self.rows:
 #            print 'empty row'
             cell = dict()
             cell['t'] = None
@@ -591,8 +624,8 @@ class Sheet(OP):
                 line.append(cell)
             return line
         else:
-            row = self.rows[ref.startRowID]
-            rowRef = Ref('@%s' %ref.startRowID)
+            row = self.rows[ref.rowID]
+            rowRef = Ref('@%s' %ref.rowID)
 #            print 'Row found'
         for i in range(length):
             rowRef.walk('right')
@@ -653,23 +686,26 @@ class Sheet(OP):
         return text
     
     def getTableSice(self,ref):
-        """get the size of the table starting at startRef in both directions, rows and columns."""
+        """get the size of the table starting at Ref in both directions, rows and columns. return Sqref"""
         c = self.get_c4ref(ref)
-        while self.get_c4ref(Ref(ref.end)):
-            ref.extend('down')
-        ref.extend('up')
-        endRowID = ref.endRowID
-        ref.endRowID = ref.startRowID
-        while self.get_c4ref(Ref(ref.end)):
-            ref.extend('right')
-        ref.extend('left')
-        ref.endRowID = endRowID
+        ref2 = Ref(ref.ref)
+        while self.get_c4ref(ref2):
+            ref2.walk('down')
+        ref2.walk('up')
+        endRowID = ref2.rowID
+        ref2 = Ref(ref.ref)
+        while self.get_c4ref(ref2):
+            ref2.walk('right')
+        ref2.walk('left')
+        endCN = ref2.CN
+        end = Ref('%s%s'%(endRowID,endCN))
+        return Sqref(ref,end)
         
     def readRow(self,ref):
         """read and return the first row of ref"""
         ref2 = Ref(ref.ref)
         row = list()
-        while ref.endCN != ref2.startCN:
+        while self.dimensionRef.end.CN != ref2.CN:
             row.append(self.read(ref2))
             ref2.walk('right')
         row.append(self.read(ref2))
@@ -711,7 +747,7 @@ class Sheet(OP):
         cfRule.setAttribute('dxfId',str(dxfId))
         cfRule.setAttribute('priority',str(priority))
         if type_ == 'beginsWith':
-            format_ = 'LEFT(%s,%s)="%s"' %(sqref.start,len(text),text)
+            format_ = 'LEFT(%s,%s)="%s"' %(sqref.start.ref,len(text),text)
             cfRule.setAttribute('operator',operator)
             cfRule.setAttribute('text',text)
         formula = self.root.createElement('formula')
@@ -804,7 +840,10 @@ class Workbook(OP):
             self.workbook.appendChild(self.calcPr)
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.workbook = self.root.getElementsByTagName('workbook')[0]
         self.fileVersion = self.workbook.getElementsByTagName('fileVersion')[0]
         self.workbookPr = self.workbook.getElementsByTagName('workbookPr')[0]
@@ -833,6 +872,15 @@ class Workbook(OP):
             if sheet.getAttribute('name') == sheetName:
                 return sheet.getAttribute('r:id')
         return -1
+
+    def listSheets(self):
+        """retrun a dict of all sheets in workbook with sheet name and sheetId"""
+        sheets = dict()
+        for sheet in self.sheets.getElementsByTagName('sheet'):
+            name = sheet.getAttribute('name')
+            sheetID = sheet.getAttribute('sheetId')
+            sheets[name] = sheetID
+        return sheets
         
 class Core(OP):
     def __init__(self,creator='',f=None):
@@ -863,7 +911,10 @@ class Core(OP):
             self.set_dcterms_modified()
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.cp_coreProperties = self.root.getElementsByTagName('cp:coreProperties')[0]
         dc_creator = self.cp_coreProperties.getElementsByTagName('dc:creator')
         if dc_creator:
@@ -947,7 +998,10 @@ class Styles(OP):
             self.countDxfs = 0
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.styleSheet = self.root.getElementsByTagName('styleSheet')[0]
         self.fonts = self.styleSheet.getElementsByTagName('fonts')[0]
         self.fills = self.styleSheet.getElementsByTagName('fills')[0]
@@ -1116,7 +1170,10 @@ class SharedStrings(OP):
             self.length = 0 # number of strings in SharedStrings.xml
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.sst = self.root.getElementsByTagName('sst')[0]
         self.sis = self.sst.getElementsByTagName('si')
     def _getID4text(self,text):
@@ -1156,110 +1213,49 @@ class SharedStrings(OP):
         return text
 
 class Ref(OP):
-    """Represents a referenc to a cell.
+    """Represents a referenc to a single cell.
     has the volloring properys:
-        * ref (A1:B1)
-        * start (A1)
-        * startRowID (1)
-        * startCN (A)
-        * end (B1)
-        * endRowID (1)
-        * endCN (B)"""
+        * ref (A1)
+        * RowID (1)
+        * CN (A)"""
     
     def __init__(self,ref):
-        """ref format:
-        A1:C4
-        A3    --> A3:A3
-        """
-        self._startF = False
-        self._endF = False
+        self._fixRowID = False
+        self._fixCN = False
         self.setRef(ref)
 
-    def getStart(self):
-        if self._startF:
-            return '$%s%s' %(self._startCN,self._startRowID)
-        else:
-            return '%s%s' %(self._startCN,self._startRowID)
-    def setStart(self,value):
-        if value.startswith('$'):
-            self._startF = True
-            value = value.replace('$','',1)
-        else:
-            self._startF = False
-        self._startRowID = int(self.get_number(value))
-        self._startCN = self.get_text(value)
-    start = property(getStart,setStart)
-    def getEnd(self):
-        if self._endF:
-            return '$%s%s' %(self._endCN,self._endRowID)
-        else:
-            return '%s%s' %(self._endCN,self._endRowID)
-    def setEnd(self,value):
-        if value.startswith('$'):
-            self._endF = True
-            value = value.replace('$','',1)
-        else:
-           self._endF = False
-        self._endRowID = int(self.get_number(value))
-        self._endCN = self.get_text(value)
-    end = property(getEnd,setEnd)
     def getRef(self):
-        return '%s%s:%s%s' %(self._startCN,self._startRowID,self._endCN,self._endRowID)
+        if self._fixCN:
+            return '$%s%s' %(self._CN,self._rowID)
+        else:
+            return '%s%s' %(self._CN,self._rowID)
     def setRef(self,value):
-        ref = value.split(':')
-        self.setStart(ref[0])
-        if len(ref) == 1:
-            self.setEnd(self.getStart())
-        elif len(ref) == 2:
-            self.setEnd(ref[1])
+        if value.startswith('$'):
+            self._fixCN = True
+            value = value.replace('$','',1)
+        else:
+            self._fixCN = False
+        self._rowID = int(self.get_number(value))
+        self._CN = self.get_text(value)
     ref = property(getRef,setRef)
-    def getStartRowID(self):
-        return self._startRowID
-    def setStartRowID(self,value):
+    def getRowID(self):
+        return self._rowID
+    def setRowID(self,value):
         if value <= 0:
-            self._startRowID = 1
+            self._rowID = 1
         else:
-            self._startRowID = int(value)
-    startRowID = property(getStartRowID,setStartRowID)
-    def getEndRowID(self):
-        return int(self._endRowID) # <- truble with data type str/int !!
-    def setEndRowID(self,value):
-        if value <= 0:
-            self._endRowID = 1
-        else:
-            self._endRowID = int(value)
-    endRowID = property(getEndRowID,setEndRowID)
-    def getStartCN(self):
-        return self._startCN
-    def setStartCN(self,value):
+            self._rowID = int(value)
+    rowID = property(getRowID,setRowID)
+    def getCN(self):
+        return self._CN
+    def setCN(self,value):
         if value.startswith('$'):
-            self._startF = True
+            self._fixCN = True
         else:
-            self._startF = False
-        self._startCN = value
-    startCN = property(getStartCN,setStartCN)
-    def getEndCN(self):
-        return self._endCN
-    def setEndCN(self,value):
-        if value.startswith('$'):
-            self._endF = True
-        else:
-            self._endF = False
-        self.endCN = value
-    endCN = property(getEndCN,setEndCN)
+            self._fixCN = False
+        self._CN = value
+    CN = property(getCN,setCN)
             
-    def get_number(self,ref):
-        return re.search('\d+\.?\d*',ref).group(0)
-
-    def get_text(self,ref):
-        return ref.replace(self.get_number(ref),'')
-
-    def count_rows(self):
-        return self.endRowID - self.startRowID +1
-    
-    def count_cols(self):
-        return self.getInt4CN(self.endCN) - self.getInt4CN(self.startCN) +1
-
     def incChr(self,c):
         """simple increment a chr by i"""
         return chr(ord(c)+1)
@@ -1327,88 +1323,93 @@ class Ref(OP):
         CN.reverse()
         return ''.join(CN)
     
-    def appendColumns(self,cols):
-        """self.endCN+=cols"""
-        endCN = list(self._endCN)
-        i = 0
-        while i < len(endCN):
-            if endCN[i] == 'Z':
-                if i == len(endCN)-1:
-                    if cols > 26:
-                        cols = cols-26
-                        endCN.append('Z')
-                        self._endCN = ''.join(endCN)
-                        return self.appendColumns(cols)
-                    else:
-                        endCN.append(chr(cols+64))
-                        self._endCN = ''.join(endCN)
-                        break
-                else:
-                    i+=1
-                    continue
-            elif ord(endCN[i])+cols > 90:
-                cols = cols - (90-ord(endCN[i]))
-                endCN[i] = 'Z'
-                self._endCN = ''.join(endCN)
-                self.appendColumns(cols)
-                break
-            else:
-                endCN[i] = chr(ord(endCN[i])+cols)
-                self._endCN = ''.join(endCN)
-                break
-            i+=1
-
-    def extend(self,d):
-        """walk with ref.end"""
-        if d == 'right':
-            self._endCN = self.incCol(self.getEndCN())
-        elif d == 'left':
-            self._endCN = self.decCol(self.getEndCN())
-        elif d == 'up':
-            self._endRowID -=1
-        elif d == 'down':
-            self._endRowID +=1
+#    def appendColumns(self,CN,cols):
+#        """CN+=cols"""
+#        CN = list(CN)
+#        i = 0
+#        while i < len(CN):
+#            if CN[i] == 'Z':
+#                if i == len(CN)-1:
+#                    if cols > 26:
+#                        cols = cols-26
+#                        endCN.append('Z')
+#                        self._endCN = ''.join(endCN)
+#                        return self.appendColumns(cols)
+#                    else:
+#                        endCN.append(chr(cols+64))
+#                        self._endCN = ''.join(endCN)
+#                        break
+#                else:
+#                    i+=1
+#                    continue
+#            elif ord(endCN[i])+cols > 90:
+#                cols = cols - (90-ord(endCN[i]))
+#                endCN[i] = 'Z'
+#                self._endCN = ''.join(endCN)
+#                self.appendColumns(cols)
+#                break
+#            else:
+#                endCN[i] = chr(ord(endCN[i])+cols)
+#                self._endCN = ''.join(endCN)
+#                break
+#            i+=1
 
     def walk(self,d):
         """move the Ref one cell in a direction(up,down,left,right)"""
         if d == 'right':
-            self._startCN = self.incCol(self.getStartCN())
+            self._CN = self.incCol(self._CN)
         elif d == 'left':
-            self._startCN = self.decCol(self.getStartCN())
+            self._CN = self.decCol(self._CN)
         elif d == 'up':
-            self._startRowID -=1
+            self._rowID -=1
         elif d == 'down':
-            self._startRowID +=1
+            self._rowID +=1
 
-    def getInt4CN(self,CN):
-        """translate CN in integer"""
-        l = list(CN)
-        l.reverse()
-        all = 0
-        for i in range(len(l)):
-            all+=ord(l[i])*(i+1)
-        return all
-
-    def compCN(self,CN1,CN2):
-        """compare self.startCN to CN.
-
-        CN > CN2 """
-        i1 = self.getInt4CN(CN2)
-        i2 = self.getInt4CN(CN1)
-        if i2 > i1:
-            return True
-        else:
-            return False
-
-    def max(self,ref):
+    def update(self,ref):
         """if ref > self then update self.startRowID/self.startCN"""
-        if self.compCN(ref.startCN,self.endCN):
-            self._endCN = ref.startCN
-        if ref.startRowID > self.endRowID:
-            self._endRowID = ref.startRowID
+        if self.compCN(ref._CN,self._CN):
+            self._CN = ref._CN
+        if ref._rowID > self._rowID:
+            self._rowID = ref.rowID
+
+class Sqref(OP):
+    """class to represent a square ref like A1:B3"""
+    def __init__(self,start,end=None):
+        if type(start) != Ref:
+            if ':' in start:
+                sq = start.split(':')
+                start = sq[0]
+                end = sq[1]
+            self.start = Ref(start)
+        else:
+            self.start = start
+        if end:
+            if type(end) != Ref:
+                self.end = Ref(end)
+            else:
+                self.end = end
+        else:
+            self.end = Ref(self.start.ref)
+
+    def getRef(self):
+        return '%s%s:%s%s' %(self.start._CN,self.start._rowID,self.end._CN,self.end._rowID)
+    def setRef(self,value):
+        ref = value.split(':')
+        self.start.setRef(ref[0])
+        if len(ref) == 1:
+            self.end.setRef(ref[0])
+        elif len(ref) == 2:
+            self.end.setRef(ref[1])
+    ref = property(getRef,setRef)
+
+    def count_rows(self):
+        return self.end.rowID - self.start.rowID +1
+
+    def count_cols(self):
+        return self.getInt4CN(self.end.CN) - self.getInt4CN(self.start.CN) +1
     
 class Table(OP):
-    def __init__(self,id_='',name='',ref='',header='',displayName=None,totalsRowShown=0,tableStyle='TableStyleLight16',f=None):
+    def __init__(self,id_='',name='',sqref='',header='',displayName=None,totalsRowShown=0,tableStyle='TableStyleLight16',f=None):
         if f:
             self._open(f)
         else:
@@ -1424,18 +1425,21 @@ class Table(OP):
             self.table.setAttribute('id',str(id_))
             self.table.setAttribute('name',name)
             self.table.setAttribute('displayName',displayName)
-            self.table.setAttribute('ref',ref.ref)
+            self.table.setAttribute('ref',sqref.ref)
             self.table.setAttribute('totalsRowShown',str(totalsRowShown))
-            self.new_table(ref,name,header)
+            self.new_table(sqref,name,header)
 
     def _open(self,f):
-        self.root = parse(f)
+        if type(f) == str:
+            self.root = parseString(f)
+        else:
+            self.root = parse(f)
         self.table = self.root.getElementsByTagName('table')[0]
         self.autoFilter = self.table.getElementsByTagName('autoFilter')[0]
         self.tableColumns = self.table.getElementsByTagName('tableColumns')[0]
         self.tableStyleInfo = self.table.getElementsByTagName('tableStyleInfo')[0]
 
-    def new_table(self,ref,name,header):
+    def new_table(self,sqref,name,header):
         """
         ref: Ref # Start cell
         name : str # name of table
@@ -1455,9 +1459,9 @@ class Table(OP):
                     <tableStyleInfo name="TableStyleLight1" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>
             </table>"""
 #        ref.appendColumns(len(cols))
-        self.count = ref.count_cols()
+        self.count = sqref.count_cols()
         self.autoFilter = self.root.createElement('autoFilter')
-        self.autoFilter.setAttribute('ref',ref.ref)
+        self.autoFilter.setAttribute('ref',sqref.ref)
         self.table.appendChild(self.autoFilter)
         self.tableColumns = self.root.createElement('tableColumns')
         self.tableColumns.setAttribute('count',str(self.count))
@@ -1517,7 +1521,7 @@ class Calc(OP):
             self.OP['xl/workbook.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('xl/workbook.xml'))
             self.OP['xl/sharedStrings.xml'] = SharedStrings()
             self.OP['xl/_rels/workbook.xml.rels'] = Relationships()
-            self.OP['xl/worksheets/sheet1.xml'] = Sheet()
+#            self.OP['xl/worksheets/sheet1.xml'] = Sheet()
             self.OP['xl/styles.xml'].set_rId(self.OP['xl/_rels/workbook.xml.rels'].new_relationship('styles.xml'))
             self.OP['[Content_Types].xml'].new_Override('/xl/styles.xml')
             self.OP['xl/sharedStrings.xml'].set_rId(self.OP['xl/_rels/workbook.xml.rels'].new_relationship('sharedStrings.xml'))
@@ -1526,7 +1530,7 @@ class Calc(OP):
             self.myZIP = False
 
     def __del__(self):
-        print 'Del'
+#        print 'Del'
         if self.myZIP:
             self.myZIP.close()
 
@@ -1685,7 +1689,10 @@ class Calc(OP):
         sheetPath = self.OP['xl/_rels/workbook.xml.rels'].getTarget(rId)
         sheetPath = 'xl/%s' %sheetPath
         if sheetPath not in self.OP:
-            self.OP[sheetPath] = Sheet(f=self.myZIP.open(sheetPath))
+            if sys.version_info < (2, 6):
+                self.OP[sheetPath] = Sheet(f=self.myZIP.read(sheetPath))
+            else:
+                self.OP[sheetPath] = Sheet(f=self.myZIP.open(sheetPath))
         self.activeSheet = self.OP[sheetPath]
 
     def hideColume(self,min_,max_):
@@ -1718,16 +1725,16 @@ class Calc(OP):
         """
         if type(ref) == str:
             ref = Ref(ref)
-        self.activeSheet.getTableSice(ref)
+        sqref = self.activeSheet.getTableSice(ref)
         self.tables+=1 # counter for tables, needed for id of the new table
         # id_,name,ref,header
         header = self.activeSheet.readRow(ref)
-        self.OP['xl/tables/table%s.xml' %self.tables] = Table(self.tables,name,ref,header,tableStyle=tableStyle) # 1.
+        self.OP['xl/tables/table%s.xml' %self.tables] = Table(self.tables,name,sqref,header,tableStyle=tableStyle) # 1.
         self.OP['[Content_Types].xml'].new_Override('/xl/tables/table%s.xml' %self.tables) # 4.
         self.OP['xl/worksheets/_rels/sheet1.xml.rels'] = Relationships() # 3.
         rId = self.OP['xl/worksheets/_rels/sheet1.xml.rels'].new_relationship('../tables/table%s.xml' %self.tables) # 3.1
         self.activeSheet.addTablePart(rId) # 2.
-        return ref
+        return sqref
 
     def import_list(self,ref,l):
         """import a list"""
@@ -1761,37 +1768,67 @@ class Calc(OP):
         self.myZIP = ZipFile(name,'r')
         if True:
 #        with ZipFile(name,'r') as myZIP:
-            f = self.myZIP.open('[Content_Types].xml')
+            if sys.version_info < (2, 6):
+                f = self.myZIP.read('[Content_Types].xml')
+            else:
+                f = self.myZIP.open('[Content_Types].xml')
             self.OP['[Content_Types].xml'] = Content_Types(f)
             for override in self.OP['[Content_Types].xml'].getOverrides():
 #                print 'Open: %s' %override[1]
                 if override[0] == 'application/vnd.openxmlformats-officedocument.extended-properties+xml':
-                    self.OP['docProps/app.xml'] = App(f=self.myZIP.open('docProps/app.xml'))
+                    if sys.version_info < (2, 6):
+                        self.OP['docProps/app.xml'] = App(f=self.myZIP.read('docProps/app.xml'))
+                    else:
+                        self.OP['docProps/app.xml'] = App(f=self.myZIP.open('docProps/app.xml'))
                 elif override[0] == 'application/vnd.openxmlformats-package.core-properties+xml':
-                    self.OP['docProps/core.xml'] = Core(f=self.myZIP.open('docProps/core.xml'))
+                    if sys.version_info < (2, 6):
+                        self.OP['docProps/core.xml'] = Core(f=self.myZIP.read('docProps/core.xml'))
+                    else:
+                        self.OP['docProps/core.xml'] = Core(f=self.myZIP.open('docProps/core.xml'))
                 elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml':
-                    self.OP['xl/workbook.xml'] = Workbook(f=self.myZIP.open('xl/workbook.xml'))
+                    if sys.version_info < (2, 6):
+                        self.OP['xl/workbook.xml'] = Workbook(f=self.myZIP.read('xl/workbook.xml'))
+                    else:
+                        self.OP['xl/workbook.xml'] = Workbook(f=self.myZIP.open('xl/workbook.xml'))
                 elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml':
-                    self.OP['xl/styles.xml'] = Styles(f=self.myZIP.open('xl/styles.xml'))
+                    if sys.version_info < (2, 6):
+                        self.OP['xl/styles.xml'] = Styles(f=self.myZIP.read('xl/styles.xml'))
+                    else:
+                        self.OP['xl/styles.xml'] = Styles(f=self.myZIP.open('xl/styles.xml'))
                 elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml':
-                    self.OP['xl/sharedStrings.xml'] = SharedStrings(f=self.myZIP.open('xl/sharedStrings.xml'))
+                    if sys.version_info < (2, 6):
+                        self.OP['xl/sharedStrings.xml'] = SharedStrings(f=self.myZIP.read('xl/sharedStrings.xml'))
+                    else:
+                        self.OP['xl/sharedStrings.xml'] = SharedStrings(f=self.myZIP.open('xl/sharedStrings.xml'))
                 elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml':
                     if sheets:
                         name = override[1][1::]
-                        self.OP[name] = Sheet(f=self.myZIP.open(name))
+                        if sys.version_info < (2, 6):
+                            self.OP[name] = Sheet(f=self.myZIP.read(name))
+                        else:
+                            self.OP[name] = Sheet(f=self.myZIP.open(name))
                 elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml':
                     name = override[1][1::]
-                    self.OP[name] = Table(f=self.myZIP.open(name))
+                    if sys.version_info < (2, 6):
+                        self.OP[name] = Table(f=self.myZIP.read(name))
+                    else:
+                        self.OP[name] = Table(f=self.myZIP.open(name))
             for i in self.myZIP.infolist():
                 if i.filename.endswith('.rels'):
  #                   print 'Open: %s' %i.filename
-                    self.OP[i.filename] = Relationships(f=self.myZIP.open(i.filename))
+                    if sys.version_info < (2, 6):
+                        self.OP[i.filename] = Relationships(f=self.myZIP.read(i.filename))
+                    else:
+                        self.OP[i.filename] = Relationships(f=self.myZIP.open(i.filename))
 
     def writeLine(self,ref,line):
         if type(ref) != Ref:
             ref = Ref(ref)
         self.activeSheet.writeLine(ref,line)
-        
+
+    def listSheets(self):
+        return self.OP['xl/workbook.xml'].listSheets()
+    
 class Expr(object):
     """Class to represent a expression(formula)"""
     def __init__(self,expr,extra=None):
@@ -1800,10 +1837,13 @@ class Expr(object):
         self.parse()
 
     def parse(self):
+        if not self.extra:
+            self.str = self.expr
+            return
         d = dict()
         for key in self.extra:
-            if type(self.extra[key]) == Ref:
-                d[key] = self.extra[key].start
+            if type(self.extra[key]) == Ref or type(self.extra[key]) == Sqref:
+                d[key] = self.extra[key].ref
             elif type(self.extra[key]) == Expr:
                 d[key] = self.extra[key].str
             else:
