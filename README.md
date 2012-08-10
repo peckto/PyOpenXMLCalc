@@ -9,10 +9,12 @@ For an example please see sample.py
 
 Implemented futures yet:
   * create a blank workbook
+  * or open an existing xlsx fiel
   * create a new sheet
   * write into a cell
   * write data in CSV format to sheet
   * read from a cell
+  * read from a sheet line by line
   * format tables with templates
   * freeze a row
   * conditional formatting  (beginsWith, expression)
