@@ -42,16 +42,17 @@ dxfId = workbook.getStyle(rgb_green)
 ## conditional formating ##
 ###########################
 
-workbook.add_conForm_beginWith(Ref('A2:A%s'%ref.endRowID),dxfId,4,'A')
+workbook.add_conForm_beginWith(Sqref('A2:A%s'%ref.end.rowID),dxfId,4,'A')
 
 format_ = 'B2="OK"'
-workbook.add_conForm_expression(Ref('B2:B%s'%ref.endRowID),dxfId,format_,4)
+workbook.add_conForm_expression(Sqref('B2:B%s'%ref.end.rowID),dxfId,format_,4)
 workbook.add_frozen_row(1)
 
 ##################
 ## save to file ##
 ##################
 
+workbook.selectCell('B2')
 workbook.save('Sample.xlsx')
 
 #########
