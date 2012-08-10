@@ -3,6 +3,10 @@ import time
 from xml.dom.minidom import *
 from zipfile import *
 
+__author__ = "peckto"
+__version__ = "1.0"
+__status__ = "productive"
+
 class OP(object):
     types = dict()
     types['docProps/app.xml'] = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
@@ -61,13 +65,29 @@ class OP(object):
         return self.root.toprettyxml(encoding=encoding)
 
 class Content_Types(OP):
-    def __init__(self):
-        self.root = Document()
-        self.types = types = self.root.createElement('Types')
-        self.types.setAttribute('xmlns','http://schemas.openxmlformats.org/package/2006/content-types')
-        self.root.appendChild(self.types)
-        self.new_default('rels')
-        self.new_default('xml')
+    def __init__(self,f=None):
+        if f:
+            self._open(f)
+        else:
+            self.root = Document()
+            self.types = types = self.root.createElement('Types')
+            self.types.setAttribute('xmlns','http://schemas.openxmlformats.org/package/2006/content-types')
+            self.root.appendChild(self.types)
+            self.new_default('rels')
+            self.new_default('xml')
+
+    def _open(self,f):
+        """parse a axisting Content_Types xml"""
+        self.root = parse(f)
+        self.types = self.root.getElementsByTagName('Types')[0]
+
+    def getOverrides(self):
+        overrides = list()
+        for override in self.types.getElementsByTagName('Override'):
+            type_ = override.getAttribute('ContentType')
+            partName = override.getAttribute('PartName')
+            overrides.append([type_,partName])
+        return overrides
 
     def new_default(self,extensio):
         default = self.root.createElement('Default')
@@ -86,12 +106,19 @@ class Content_Types(OP):
         self.new_Override(sheetPath)
 
 class Relationships(OP):
-    def __init__(self):
-        self.id_ = 0
-        self.root = Document()
-        self.relationships = types = self.root.createElement('Relationships')
-        self.relationships.setAttribute('xmlns','http://schemas.openxmlformats.org/package/2006/relationships')
-        self.root.appendChild(self.relationships)
+    def __init__(self,f=None):
+        if f:
+            self._open(f)
+        else:
+            self.id_ = 0
+            self.root = Document()
+            self.relationships = self.root.createElement('Relationships')
+            self.relationships.setAttribute('xmlns','http://schemas.openxmlformats.org/package/2006/relationships')
+            self.root.appendChild(self.relationships)
+
+    def _open(self,f):
+        self.root = parse(f)
+        self.relationships = self.root.getElementsByTagName('Relationships')[0]
         
     def new_relationship(self,target):
         rId = self.get_NewID()
@@ -106,51 +133,80 @@ class Relationships(OP):
         self.id_+= 1
         return self.id_
 
+    def getTarget(self,rel):
+        """return Target for rId"""
+        for relation in self.relationships.getElementsByTagName('Relationship'):
+            if relation.getAttribute('Id') == rel:
+                return relation.getAttribute('Target')
+        return -1
+
 class App(OP):
-    def __init__(self,company):
-        self.countTables = 0
-        self.root = Document()
-        self.properties = self.root.createElement('Properties')
-        self.properties.setAttribute('xmlns','http://schemas.openxmlformats.org/officeDocument/2006/extended-properties')
-        self.properties.setAttribute('xmlns:vt','http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes')
-        self.set_TotalTime(0)
-        self.set_Application('Microsoft Excel')
-        self.set_DocSecurity(0)
-        self.set_ScaleCrop('false')
-#        self.headingPairs = self.root.createElement('HeadingPairs')
-#        self.properties.appendChild(self.headingPairs)
-#        vt_vector = self.root.createElement('vt:vector')
-#        vt_vector.setAttribute('size','2')
-#        vt_vector.setAttribute('baseType','variant')
-#        self.headingPairs.appendChild(vt_vector)
-#        vt_variant = self.root.createElement('vt:variant')
-#        vt_vector.appendChild(vt_variant)
-#        vt_lpstr = self.new_ElementWithText('vt:lpstr',sheetName)
-#        vt_variant.appendChild(vt_lpstr)
-#        vt_variant = self.root.createElement('vt:variant')
-#        vt_vector.appendChild(vt_variant)
-#        vt_i4 = self.new_ElementWithText('vt:i4',0)
-#        vt_variant.appendChild(vt_i4)
-#        vt_variant = self.root.createElement('vt:variant')
-#        vt_i4 = self.new_ElementWithText('vt:i4',self.countTables)
-#        vt_variant.appendChild(vt_i4)
-        self.titlesOfParts = self.root.createElement('TitlesOfParts')
-        self.properties.appendChild(self.titlesOfParts)
-        vt_vector = self.root.createElement('vt:vector')
-        vt_vector.setAttribute('size','0')
-        vt_vector.setAttribute('baseType','lpstr')
-        self.titlesOfParts.appendChild(vt_vector)
-        self.company = self.new_ElementWithText('Company',company)
-        self.properties.appendChild(self.company)
-        self.linksUpToDate = self.new_ElementWithText('LinksUpToDate','false')
-        self.properties.appendChild(self.linksUpToDate)
-        self.sharedDoc = self.new_ElementWithText('SharedDoc','false')
-        self.properties.appendChild(self.sharedDoc)
-        self.hyperlinksChanged = self.new_ElementWithText('HyperlinksChanged','false')
-        self.properties.appendChild(self.hyperlinksChanged)
-        self.appVersion = self.new_ElementWithText('AppVersion','12.0000')
-        self.properties.appendChild(self.appVersion)
-        self.root.appendChild(self.properties)
+    def __init__(self,company='',f=None):
+        if f:
+            self._open(f)
+        else:
+            self.countTables = 0
+            self.root = Document()
+            self.properties = self.root.createElement('Properties')
+            self.properties.setAttribute('xmlns','http://schemas.openxmlformats.org/officeDocument/2006/extended-properties')
+            self.properties.setAttribute('xmlns:vt','http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes')
+            self.set_TotalTime(0)
+            self.set_Application('Microsoft Excel')
+            self.set_DocSecurity(0)
+            self.set_ScaleCrop('false')
+    #        self.headingPairs = self.root.createElement('HeadingPairs')
+    #        self.properties.appendChild(self.headingPairs)
+    #        vt_vector = self.root.createElement('vt:vector')
+    #        vt_vector.setAttribute('size','2')
+    #        vt_vector.setAttribute('baseType','variant')
+    #        self.headingPairs.appendChild(vt_vector)
+    #        vt_variant = self.root.createElement('vt:variant')
+    #        vt_vector.appendChild(vt_variant)
+    #        vt_lpstr = self.new_ElementWithText('vt:lpstr',sheetName)
+    #        vt_variant.appendChild(vt_lpstr)
+    #        vt_variant = self.root.createElement('vt:variant')
+    #        vt_vector.appendChild(vt_variant)
+    #        vt_i4 = self.new_ElementWithText('vt:i4',0)
+    #        vt_variant.appendChild(vt_i4)
+    #        vt_variant = self.root.createElement('vt:variant')
+    #        vt_i4 = self.new_ElementWithText('vt:i4',self.countTables)
+    #        vt_variant.appendChild(vt_i4)
+            self.titlesOfParts = self.root.createElement('TitlesOfParts')
+            self.properties.appendChild(self.titlesOfParts)
+            vt_vector = self.root.createElement('vt:vector')
+            vt_vector.setAttribute('size','0')
+            vt_vector.setAttribute('baseType','lpstr')
+            self.titlesOfParts.appendChild(vt_vector)
+            self.company = self.new_ElementWithText('Company',company)
+            self.properties.appendChild(self.company)
+            self.linksUpToDate = self.new_ElementWithText('LinksUpToDate','false')
+            self.properties.appendChild(self.linksUpToDate)
+            self.sharedDoc = self.new_ElementWithText('SharedDoc','false')
+            self.properties.appendChild(self.sharedDoc)
+            self.hyperlinksChanged = self.new_ElementWithText('HyperlinksChanged','false')
+            self.properties.appendChild(self.hyperlinksChanged)
+            self.appVersion = self.new_ElementWithText('AppVersion','12.0000')
+            self.properties.appendChild(self.appVersion)
+            self.root.appendChild(self.properties)
+
+    def _open(self,f):
+        self.root = parse(f)
+        self.properties = self.root.getElementsByTagName('Properties')[0]
+        self.totalTime = self.properties.getElementsByTagName('TotalTime')[0]
+        self.application = self.properties.getElementsByTagName('Application')[0]
+        self.docSecurity = self.properties.getElementsByTagName('DocSecurity')[0]
+        self.scaleCrop = self.properties.getElementsByTagName('ScaleCrop')[0]
+        self.titlesOfParts = self.properties.getElementsByTagName('TitlesOfParts')[0]
+        company = self.properties.getElementsByTagName('Company')
+        if company:
+            self.company = company[0]
+        else:
+            self.company = self.root.createElement('Company')
+            self.properties.appendChild(self.company)
+        self.linksUpToDate = self.properties.getElementsByTagName('LinksUpToDate')[0]
+        self.sharedDoc = self.properties.getElementsByTagName('SharedDoc')[0]
+        self.hyperlinksChanged = self.properties.getElementsByTagName('HyperlinksChanged')[0]
+        self.appVersion = self.properties.getElementsByTagName('AppVersion')[0]
 
     def new_Table(self,tableName):
 #        vt_variant = self.headingPairs.getElementsByTagName('vt:variant')[1]
@@ -191,37 +247,65 @@ class App(OP):
         return self.countTables+1
 
 class Sheet(OP):
-    def __init__(self):
-        self.root = Document()
-        self.worksheet = self.root.createElement('worksheet')
-        self.worksheet.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-        self.worksheet.setAttribute('xmlns:r','http://schemas.openxmlformats.org/officeDocument/2006/relationships')
-        self.root.appendChild(self.worksheet)
-        self.dimension = self.root.createElement('dimension')
-        self.dimension.setAttribute('ref','A1')
-        self.worksheet.appendChild(self.dimension) 
-        self.sheetViews = self.root.createElement('sheetViews')
-        self.worksheet.appendChild(self.sheetViews)
-        self.sheetViews.appendChild(self.newSheetView(1,0))
-        self.sheetFormatPr = self.root.createElement('sheetFormatPr')
-        self.sheetFormatPr.setAttribute('baseColWidth',str(10))
-        self.sheetFormatPr.setAttribute('defaultRowHeight',str(15))
-        self.worksheet.appendChild(self.sheetFormatPr)
-        self.cols = None
+    def __init__(self,f=None):
+        if f:
+            self._open(f)
+        else:
+            self.root = Document()
+            self.worksheet = self.root.createElement('worksheet')
+            self.worksheet.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
+            self.worksheet.setAttribute('xmlns:r','http://schemas.openxmlformats.org/officeDocument/2006/relationships')
+            self.root.appendChild(self.worksheet)
+            self.dimension = self.root.createElement('dimension')
+            self.dimension.setAttribute('ref','A1')
+            self.worksheet.appendChild(self.dimension) 
+            self.sheetViews = self.root.createElement('sheetViews')
+            self.worksheet.appendChild(self.sheetViews)
+            self.sheetViews.appendChild(self.newSheetView(1,0))
+            self.sheetFormatPr = self.root.createElement('sheetFormatPr')
+            self.sheetFormatPr.setAttribute('baseColWidth',str(10))
+            self.sheetFormatPr.setAttribute('defaultRowHeight',str(15))
+            self.worksheet.appendChild(self.sheetFormatPr)
+            self.cols = None
+            self.rows = dict()
+            self.tableParts = None
+            self.cursor = Ref('A1')
+            self.sheetData = self.root.createElement('sheetData')
+            self.worksheet.appendChild(self.sheetData)
+    #        self.pageMargins = self.root.createElement('pageMargins')
+    #        self.pageMargins.setAttribute('left','0.7')
+    #        self.pageMargins.setAttribute('right','0.7')
+    #        self.pageMargins.setAttribute('top','0.78740157499999996')
+    #        self.pageMargins.setAttribute('bottom','0.78740157499999996')
+    #        self.pageMargins.setAttribute('header','0.3')
+    #        self.pageMargins.setAttribute('footer','0.3')
+    #        self.worksheet.appendChild(self.pageMargins)
+            self.writeEngine = 'inlineStr'
+            self.dimensionRef = Ref('A1')
+
+    def _open(self,f):
+        self.root = parse(f)
+        self.worksheet = self.root.getElementsByTagName('worksheet')[0]
+        self.dimension = self.worksheet.getElementsByTagName('dimension')[0]
+        self.sheetViews = self.worksheet.getElementsByTagName('sheetViews')[0]
+        self.sheetFormatPr = self.worksheet.getElementsByTagName('sheetFormatPr')[0]
+        e = self.worksheet.getElementsByTagName('cols')
+        if e:
+            self.cols = e[0]
         self.rows = dict()
         self.tableParts = None
-        self.sheetData = self.root.createElement('sheetData')
-        self.worksheet.appendChild(self.sheetData)
-#        self.pageMargins = self.root.createElement('pageMargins')
-#        self.pageMargins.setAttribute('left','0.7')
-#        self.pageMargins.setAttribute('right','0.7')
-#        self.pageMargins.setAttribute('top','0.78740157499999996')
-#        self.pageMargins.setAttribute('bottom','0.78740157499999996')
-#        self.pageMargins.setAttribute('header','0.3')
-#        self.pageMargins.setAttribute('footer','0.3')
-#        self.worksheet.appendChild(self.pageMargins)
-        self.writeEngine = 'inlineStr'
-        self.dimensionRef = Ref('A1')
+        self.sheetData = self.worksheet.getElementsByTagName('sheetData')[0]
+        self.writeEngine = 'sharedStrings'
+        self.dimensionRef = Ref(self.dimension.getAttribute('ref'))
+        tableParts = self.worksheet.getElementsByTagName('tableParts')
+        if tableParts:
+            self.tableParts = tableParts[0]
+        else:
+            self.tableParts = self.root.createElement('tableParts')
+            self.worksheet.appendChild(self.tableParts)
+        for row in self.sheetData.getElementsByTagName('row'):
+            self.rows[int(row.getAttribute('r'))] = row
+        self.cursor = self.getSelectedCell()
 
     def newSheetView(self,tabSelected,workbookViewId):
         sheetView = self.root.createElement('sheetView')
@@ -233,6 +317,29 @@ class Sheet(OP):
         sheetView = self.sheetViews.getElementsByTagName('sheetView')[0]
         sheetView.setAttribute('tabSelected',"1")
 
+    def selectCell(self,ref):
+        """Select a cell
+        <selection activeCell="B2" sqref="B2"/>"""
+        sheetView = self.sheetViews.getElementsByTagName('sheetView')[0]
+        selection = sheetView.getElementsByTagName('selection')
+        if not selection:
+            selection = self.root.createElement('selection')
+            sheetView.appendChild(selection)
+        else:
+            selection = selection[0]
+        selection.setAttribute('activeCell',ref.start)
+        selection.setAttribute('sqref',ref.start)
+
+    def getSelectedCell(self):
+        """get the selected Cell Ref in sheet"""
+        sheetView = self.sheetViews.getElementsByTagName('sheetView')[0]
+        selection = sheetView.getElementsByTagName('selection')
+        if not selection:
+            activeCell = 'A1'
+        else:
+            activeCell = selection[0].getAttribute('activeCell')
+        return Ref(activeCell)
+    
     def hideColume(self,min_,max_):
         """Hide a Colume col
         <worksheet>
@@ -317,6 +424,8 @@ class Sheet(OP):
 
     def write(self,ref,text):
         self.dimensionRef.max(ref)
+        if not text:
+            text = ''
         if type(text) != int:
             try:
                 text = int(text)
@@ -423,18 +532,28 @@ class Sheet(OP):
         row.appendChild(c)
         self.update_spans(row)
 
-    def get_c4ref(self,ref):
-        rows = self.sheetData.getElementsByTagName('row')
-        for row in rows:
-            if ref.startRowID == int(row.getAttribute('r')):
-                for c in row.getElementsByTagName('c'):
-                    if c.getAttribute('r') == ref.start:
-                        return c
+    def get_c4ref(self,ref,row=None):
+        if not row:
+#            row = self.get_row(ref)
+            row = self.get_row4ref(ref)
+        if not row:
+            return None
+        for c in row.getElementsByTagName('c'):
+            if c.getAttribute('r') == ref.start:
+                return c
 #        print 'no cell with ref = %s found!' %ref.start
         return None
 
+    def get_row4ref(self,ref):
+        rows = self.sheetData.getElementsByTagName('row')
+        for row in rows:
+            if ref.startRowID == int(row.getAttribute('r')):
+                return row
+
     def read(self,ref):
         """read cell content"""
+#        if ref not in self.range:
+#            return None
         if type(ref) == str:
             ref = Ref(ref)
         c = self.get_c4ref(ref)
@@ -452,13 +571,72 @@ class Sheet(OP):
             f = c.getElementsByTagName('f')[0]
             return self.readExpressin(f)
 
+    def readLine(self,ref=None):
+        """read the holse line on ref.startRowID, default self.cursor
+        length is constant = dimensionRef.countColumes()"""
+#        print 'Read line at RowID: %s' %ref.startRowID
+        length = self.dimensionRef.count_cols()
+        if not ref:
+            ref = self.cursor
+        if ref.startRowID > self.dimensionRef.endRowID:
+#            print 'Table END'
+            return None
+        line = list()
+        if ref.startRowID not in self.rows:
+#            print 'empty row'
+            cell = dict()
+            cell['t'] = None
+            cell['v'] = ''
+            for i in range(length):
+                line.append(cell)
+            return line
+        else:
+            row = self.rows[ref.startRowID]
+            rowRef = Ref('@%s' %ref.startRowID)
+#            print 'Row found'
+        for i in range(length):
+            rowRef.walk('right')
+#            print 'get C for: %s' %rowRef.start
+            cell = dict()
+            c = self.get_c4ref(rowRef,row)
+            if not c:
+#                print 'No <c> Tag found'
+                cell['t'] = None
+                cell['v'] = ''
+                line.append(cell)
+                continue
+            vs = c.getElementsByTagName('v')
+            if vs:
+                v = vs[0]
+            else:
+#                print 'No <v> Tag found'
+                cell['t'] = None
+                cell['v'] = ''
+                line.append(cell)
+                continue
+            if c.attributes.has_key('t'):
+#                print '<v> Tag found!'
+                t = c.getAttribute('t')
+                cell['t'] = t
+                if t == 's':
+                    cell['v'] = int(v.firstChild.nodeValue)
+                elif t == 'inlineStr':
+                    pass
+            else:
+                cell['t'] = 'int'
+                cell['v'] = unicode(v.firstChild.nodeValue)
+            line.append(cell)
+        return line
+
     def readExpressin(self,f):
         """get expression from cell"""
         return f.firstChild.nodeValue
     
-    def getStringFromSharedStings(self,id_):
-        """get String from SharedStrings by ID"""
-        pass
+    def getSharedStringId(self,ref):
+        """get String ID from SharedStrings by Ref"""
+        c = self.get_c4ref(ref)
+        v = c.getElementsByTagName('v')[0]
+        return int(v.firstChild.nodeValue)
     
     def get_inlineStr(self,c):
         """get cell contend from inlineStr
@@ -478,13 +656,14 @@ class Sheet(OP):
         """get the size of the table starting at startRef in both directions, rows and columns."""
         c = self.get_c4ref(ref)
         while self.get_c4ref(Ref(ref.end)):
-#        while self.read(ref.end):
             ref.extend('down')
         ref.extend('up')
+        endRowID = ref.endRowID
+        ref.endRowID = ref.startRowID
         while self.get_c4ref(Ref(ref.end)):
-#        while self.read(ref.end):
             ref.extend('right')
         ref.extend('left')
+        ref.endRowID = endRowID
         
     def readRow(self,ref):
         """read and return the first row of ref"""
@@ -592,34 +771,47 @@ class Sheet(OP):
         self.dimension.setAttribute('ref',self.dimensionRef.ref)
 
 class Workbook(OP):
-    def __init__(self,appName,lastEdited=4,lowestEdited=4,rupBuild=4506,defaultThemeVersion=124226,calcId=125725):
-        self.root = Document()
-        self.workbook = self.root.createElement('workbook')
-        self.workbook.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-        self.workbook.setAttribute('xmlns:r','http://schemas.openxmlformats.org/officeDocument/2006/relationships')
-        self.root.appendChild(self.workbook)
-        self.fileVersion = self.root.createElement('fileVersion')
-        self.fileVersion.setAttribute('appName',appName)
-        self.fileVersion.setAttribute('lastEdited',str(lastEdited))
-        self.fileVersion.setAttribute('lowestEdited',str(lowestEdited))
-        self.fileVersion.setAttribute('rupBuild',str(rupBuild))
-        self.workbook.appendChild(self.fileVersion)
-        self.workbookPr = self.root.createElement('workbookPr')
-        self.workbookPr.setAttribute('defaultThemeVersion',str(defaultThemeVersion))
-        self.workbook.appendChild(self.workbookPr)
-        self.bookViews = self.root.createElement('bookViews')
-        self.workbook.appendChild(self.bookViews)
-        self.workbookView = self.root.createElement('workbookView')
-        self.workbookView.setAttribute('xWindow','240')
-        self.workbookView.setAttribute('yWindow','105')
-        self.workbookView.setAttribute('windowWidth','18795')
-        self.workbookView.setAttribute('windowHeight','12270')
-        self.bookViews.appendChild(self.workbookView)
-        self.sheets = self.root.createElement('sheets')
-        self.workbook.appendChild(self.sheets)
-        self.calcPr = self.root.createElement('calcPr')
-        self.calcPr.setAttribute('calcId',str(calcId))
-        self.workbook.appendChild(self.calcPr)
+    def __init__(self,appName='',lastEdited=4,lowestEdited=4,rupBuild=4506,defaultThemeVersion=124226,calcId=125725,f=None):
+        if f:
+            self._open(f)
+        else:
+            self.root = Document()
+            self.workbook = self.root.createElement('workbook')
+            self.workbook.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
+            self.workbook.setAttribute('xmlns:r','http://schemas.openxmlformats.org/officeDocument/2006/relationships')
+            self.root.appendChild(self.workbook)
+            self.fileVersion = self.root.createElement('fileVersion')
+            self.fileVersion.setAttribute('appName',appName)
+            self.fileVersion.setAttribute('lastEdited',str(lastEdited))
+            self.fileVersion.setAttribute('lowestEdited',str(lowestEdited))
+            self.fileVersion.setAttribute('rupBuild',str(rupBuild))
+            self.workbook.appendChild(self.fileVersion)
+            self.workbookPr = self.root.createElement('workbookPr')
+            self.workbookPr.setAttribute('defaultThemeVersion',str(defaultThemeVersion))
+            self.workbook.appendChild(self.workbookPr)
+            self.bookViews = self.root.createElement('bookViews')
+            self.workbook.appendChild(self.bookViews)
+            self.workbookView = self.root.createElement('workbookView')
+            self.workbookView.setAttribute('xWindow','240')
+            self.workbookView.setAttribute('yWindow','105')
+            self.workbookView.setAttribute('windowWidth','18795')
+            self.workbookView.setAttribute('windowHeight','12270')
+            self.bookViews.appendChild(self.workbookView)
+            self.sheets = self.root.createElement('sheets')
+            self.workbook.appendChild(self.sheets)
+            self.calcPr = self.root.createElement('calcPr')
+            self.calcPr.setAttribute('calcId',str(calcId))
+            self.workbook.appendChild(self.calcPr)
+
+    def _open(self,f):
+        self.root = parse(f)
+        self.workbook = self.root.getElementsByTagName('workbook')[0]
+        self.fileVersion = self.workbook.getElementsByTagName('fileVersion')[0]
+        self.workbookPr = self.workbook.getElementsByTagName('workbookPr')[0]
+        self.bookViews = self.workbook.getElementsByTagName('bookViews')[0]
+        self.sheets = self.workbook.getElementsByTagName('sheets')[0]
+        self.calcPr = self.workbook.getElementsByTagName('calcPr')[0]
+        self.workbookView = self.bookViews.getElementsByTagName('workbookView')[0]
 
     def new_sheet(self,name,sheetId,rId):
         newSheet = self.root.createElement('sheet')
@@ -634,32 +826,55 @@ class Workbook(OP):
             if sheet.getAttribute('name') == sheetName:
                 self.workbookView.setAttribute('activeTab',str(i))
             i+=1
+
+    def getRId4Sheet(self,sheetName):
+        """return the rId for the Sheet sheetName, else -1"""
+        for sheet in self.sheets.getElementsByTagName('sheet'):
+            if sheet.getAttribute('name') == sheetName:
+                return sheet.getAttribute('r:id')
+        return -1
         
 class Core(OP):
-    def __init__(self,creator):
-        self.root = Document()
-        self.cp_coreProperties = self.root.createElement('cp:coreProperties')
-        self.cp_coreProperties.setAttribute('xmlns:cp','http://schemas.openxmlformats.org/package/2006/metadata/core-properties')
-        self.cp_coreProperties.setAttribute('xmlns:dc','http://purl.org/dc/elements/1.1/')
-        self.cp_coreProperties.setAttribute('xmlns:dcterms','http://purl.org/dc/terms/')
-        self.cp_coreProperties.setAttribute('xmlns:dcmitype','http://purl.org/dc/dcmitype/')
-        self.cp_coreProperties.setAttribute('xmlns:xsi','http://www.w3.org/2001/XMLSchema-instance')
-        self.root.appendChild(self.cp_coreProperties) 
-        self.dc_creator = self.root.createElement('dc:creator')
-        self.cp_coreProperties.appendChild(self.dc_creator) 
-        self.set_creator(creator)
-        self.cp_lastModifiedBy = self.root.createElement('cp:lastModifiedBy')
-        self.cp_coreProperties.appendChild(self.cp_lastModifiedBy)
-        self.set_lastModifiedBy(creator)
-        self.dcterms_created = self.root.createElement('dcterms:created')
-        self.dcterms_created.setAttribute('xsi:type','dcterms:W3CDTF')
-        self.cp_coreProperties.appendChild(self.dcterms_created)
-        self.set_dcterms_created()
-        self.dcterms_modified = self.root.createElement('dcterms:modified')
-        self.dcterms_modified.setAttribute('xsi:type','dcterms:W3CDTF')
-        self.cp_coreProperties.appendChild(self.dcterms_modified)
-        self.set_dcterms_modified()
+    def __init__(self,creator='',f=None):
+        if f:
+            self._open(f)
+        else:
+            self.root = Document()
+            self.cp_coreProperties = self.root.createElement('cp:coreProperties')
+            self.cp_coreProperties.setAttribute('xmlns:cp','http://schemas.openxmlformats.org/package/2006/metadata/core-properties')
+            self.cp_coreProperties.setAttribute('xmlns:dc','http://purl.org/dc/elements/1.1/')
+            self.cp_coreProperties.setAttribute('xmlns:dcterms','http://purl.org/dc/terms/')
+            self.cp_coreProperties.setAttribute('xmlns:dcmitype','http://purl.org/dc/dcmitype/')
+            self.cp_coreProperties.setAttribute('xmlns:xsi','http://www.w3.org/2001/XMLSchema-instance')
+            self.root.appendChild(self.cp_coreProperties) 
+            self.dc_creator = self.root.createElement('dc:creator')
+            self.cp_coreProperties.appendChild(self.dc_creator) 
+            self.set_creator(creator)
+            self.cp_lastModifiedBy = self.root.createElement('cp:lastModifiedBy')
+            self.cp_coreProperties.appendChild(self.cp_lastModifiedBy)
+            self.set_lastModifiedBy(creator)
+            self.dcterms_created = self.root.createElement('dcterms:created')
+            self.dcterms_created.setAttribute('xsi:type','dcterms:W3CDTF')
+            self.cp_coreProperties.appendChild(self.dcterms_created)
+            self.set_dcterms_created()
+            self.dcterms_modified = self.root.createElement('dcterms:modified')
+            self.dcterms_modified.setAttribute('xsi:type','dcterms:W3CDTF')
+            self.cp_coreProperties.appendChild(self.dcterms_modified)
+            self.set_dcterms_modified()
 
+    def _open(self,f):
+        self.root = parse(f)
+        self.cp_coreProperties = self.root.getElementsByTagName('cp:coreProperties')[0]
+        dc_creator = self.cp_coreProperties.getElementsByTagName('dc:creator')
+        if dc_creator:
+            self.dc_creator = dc_creator[0]
+        else:
+            self.dc_creator = self.root.createElement('dc:creator')
+            self.cp_coreProperties.appendChild(self.dc_creator)
+        self.cp_lastModifiedBy = self.cp_coreProperties.getElementsByTagName('cp:lastModifiedBy')[0]
+        self.dcterms_created = self.cp_coreProperties.getElementsByTagName('dcterms:created')[0]
+        self.dcterms_modified = self.cp_coreProperties.getElementsByTagName('dcterms:modified')[0]
+        
     def set_creator(self,creator):
         self.dc_creator_text = self.root.createTextNode(creator)
         if self.dc_creator.firstChild:
@@ -687,46 +902,60 @@ class Core(OP):
         self.dcterms_modified.appendChild(self.dcterms_modified_text)
 
 class Styles(OP):
-    def __init__(self):
+    def __init__(self,f=None):
         self.countFonts = 0
         self.countFills = 0
         self.countBorders = 0
         self.countCellStyleXfs = 0
         self.countCellXfs = 0
         self.countCellStyles = 0
-        self.root = Document()
-        self.styleSheet = self.root.createElement('styleSheet')
-        self.styleSheet.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-        self.root.appendChild(self.styleSheet)
-        self.fonts = self.root.createElement('fonts')
-        self.styleSheet.appendChild(self.fonts)
-        self.new_font(11,1,'Calibri',2,'minor')
-        self.fills = self.root.createElement('fills')
-        self.styleSheet.appendChild(self.fills)
-        self.new_fill('none')
-        self.new_fill('gray125')
-        self.borders = self.root.createElement('borders')
-        self.styleSheet.appendChild(self.borders)
-        self.new_border({})
-        self.cellStyleXfs = self.root.createElement('cellStyleXfs')
-        self.styleSheet.appendChild(self.cellStyleXfs)
-        self.new_cellStyleXfs(0,0,0,0)
-        self.cellXfs = self.root.createElement('cellXfs')
-        self.styleSheet.appendChild(self.cellXfs)
-        self.new_cellXfs(0,0,0,0)
-        self.cellStyles = self.root.createElement('cellStyles')
-        self.styleSheet.appendChild(self.cellStyles)
-        self.new_cellStyle('Standard',0,0)
-        self.dxfs = self.root.createElement('dxfs')
-        self.dxfs.setAttribute('count','0')
-        self.styleSheet.appendChild(self.dxfs)
-#        self.tableStyles = self.root.createElement('tableStyles')
-#        self.tableStyles.setAttribute('count','0')
-#        self.tableStyles.setAttribute('defaultTableStyle','TableStyleMedium9')
-#        self.tableStyles.setAttribute('defaultPivotStyle','PivotStyleLight16')
-#        self.styleSheet.appendChild(self.tableStyles)
-        self.xdfs = None
-        self.countDxfs = 0
+        if f:
+            self._open(f)
+        else:
+            self.root = Document()
+            self.styleSheet = self.root.createElement('styleSheet')
+            self.styleSheet.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
+            self.root.appendChild(self.styleSheet)
+            self.fonts = self.root.createElement('fonts')
+            self.styleSheet.appendChild(self.fonts)
+            self.new_font(11,1,'Calibri',2,'minor')
+            self.fills = self.root.createElement('fills')
+            self.styleSheet.appendChild(self.fills)
+            self.new_fill('none')
+            self.new_fill('gray125')
+            self.borders = self.root.createElement('borders')
+            self.styleSheet.appendChild(self.borders)
+            self.new_border({})
+            self.cellStyleXfs = self.root.createElement('cellStyleXfs')
+            self.styleSheet.appendChild(self.cellStyleXfs)
+            self.new_cellStyleXfs(0,0,0,0)
+            self.cellXfs = self.root.createElement('cellXfs')
+            self.styleSheet.appendChild(self.cellXfs)
+            self.new_cellXfs(0,0,0,0)
+            self.cellStyles = self.root.createElement('cellStyles')
+            self.styleSheet.appendChild(self.cellStyles)
+            self.new_cellStyle('Standard',0,0)
+            self.dxfs = self.root.createElement('dxfs')
+            self.dxfs.setAttribute('count','0')
+            self.styleSheet.appendChild(self.dxfs)
+    #        self.tableStyles = self.root.createElement('tableStyles')
+    #        self.tableStyles.setAttribute('count','0')
+    #        self.tableStyles.setAttribute('defaultTableStyle','TableStyleMedium9')
+    #        self.tableStyles.setAttribute('defaultPivotStyle','PivotStyleLight16')
+    #        self.styleSheet.appendChild(self.tableStyles)
+            self.xdfs = None
+            self.countDxfs = 0
+
+    def _open(self,f):
+        self.root = parse(f)
+        self.styleSheet = self.root.getElementsByTagName('styleSheet')[0]
+        self.fonts = self.styleSheet.getElementsByTagName('fonts')[0]
+        self.fills = self.styleSheet.getElementsByTagName('fills')[0]
+        self.borders = self.styleSheet.getElementsByTagName('borders')[0]
+        self.cellStyleXfs = self.styleSheet.getElementsByTagName('cellStyleXfs')[0]
+        self.cellXfs = self.styleSheet.getElementsByTagName('cellXfs')[0]
+        self.cellStyles = self.styleSheet.getElementsByTagName('cellStyles')[0]
+        self.dxfs = self.styleSheet.getElementsByTagName('dxfs')[0]
 
     def new_cellStyle(self,name,xfId,builtinId):
         cellStyle = self.root.createElement('cellStyle')
@@ -872,17 +1101,24 @@ class Styles(OP):
         return dxfsId
 
 class SharedStrings(OP):
-    def __init__(self):
-        self.count = 0
-        self.uniqueCount = 0
-        self.root = Document()
-        self.sst = self.root.createElement('sst')
-        self.sst.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-        self.sst.setAttribute('count',str(self.count))
-        self.sst.setAttribute('uniqueCount',str(self.uniqueCount))
-        self.root.appendChild(self.sst)
-        self.length = 0 # number of strings in SharedStrings.xml
+    def __init__(self,f=None):
+        if f:
+            self._open(f)
+        else:
+            self.count = 0
+            self.uniqueCount = 0
+            self.root = Document()
+            self.sst = self.root.createElement('sst')
+            self.sst.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
+            self.sst.setAttribute('count',str(self.count))
+            self.sst.setAttribute('uniqueCount',str(self.uniqueCount))
+            self.root.appendChild(self.sst)
+            self.length = 0 # number of strings in SharedStrings.xml
 
+    def _open(self,f):
+        self.root = parse(f)
+        self.sst = self.root.getElementsByTagName('sst')[0]
+        self.sis = self.sst.getElementsByTagName('si')
     def _getID4text(self,text):
         """get the ID of a text in SharedStings.xml
         if no entry is found, -1 is returned
@@ -908,14 +1144,28 @@ class SharedStrings(OP):
             self.length +=1
         return id_
     
-    def getStringFromSharedStings(self,id_):
-        si = self.sst.getElementsByTagName('si')[id_]
+    def read(self,id_):
+        si = self.sis[id_]
         text = ''
+#        print si.toprettyxml()
         for t in si.getElementsByTagName('t'):
-            text+=t.firstChild.nodeValue
+            child = t.firstChild
+            if not child:
+                continue
+            text+=child.nodeValue
         return text
 
 class Ref(OP):
+    """Represents a referenc to a cell.
+    has the volloring properys:
+        * ref (A1:B1)
+        * start (A1)
+        * startRowID (1)
+        * startCN (A)
+        * end (B1)
+        * endRowID (1)
+        * endCN (B)"""
+    
     def __init__(self,ref):
         """ref format:
         A1:C4
@@ -972,7 +1222,7 @@ class Ref(OP):
             self._startRowID = int(value)
     startRowID = property(getStartRowID,setStartRowID)
     def getEndRowID(self):
-        return str(self._endRowID)
+        return int(self._endRowID) # <- truble with data type str/int !!
     def setEndRowID(self,value):
         if value <= 0:
             self._endRowID = 1
@@ -1008,7 +1258,7 @@ class Ref(OP):
         return self.endRowID - self.startRowID +1
     
     def count_cols(self):
-        return ord(self.endCN) -ord(self.startCN) +1
+        return self.getInt4CN(self.endCN) - self.getInt4CN(self.startCN) +1
 
     def incChr(self,c):
         """simple increment a chr by i"""
@@ -1140,7 +1390,8 @@ class Ref(OP):
         return all
 
     def compCN(self,CN1,CN2):
-        """compare self.startCN to CN
+        """compare self.startCN to CN.
+
         CN > CN2 """
         i1 = self.getInt4CN(CN2)
         i2 = self.getInt4CN(CN1)
@@ -1157,28 +1408,38 @@ class Ref(OP):
             self._endRowID = ref.startRowID
     
 class Table(OP):
-    def __init__(self,id_,name,ref,header,displayName=None,totalsRowShown=0,tableStyle='TableStyleLight16'):
-        if not displayName:
-            displayName = name
-        if not tableStyle:
-            self.tableStyle = 'TableStyleLight16'
+    def __init__(self,id_='',name='',ref='',header='',displayName=None,totalsRowShown=0,tableStyle='TableStyleLight16',f=None):
+        if f:
+            self._open(f)
         else:
-            self.tableStyle = tableStyle
-        self.root = Document()
-        self.table = self.root.createElement('table')
-        self.table.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-        self.table.setAttribute('id',str(id_))
-        self.table.setAttribute('name',name)
-        self.table.setAttribute('displayName',displayName)
-        self.table.setAttribute('ref',ref.ref)
-        self.table.setAttribute('totalsRowShown',str(totalsRowShown))
-        self.new_table(ref,name,header)
+            if not displayName:
+                displayName = name
+            if not tableStyle:
+                self.tableStyle = 'TableStyleLight16'
+            else:
+                self.tableStyle = tableStyle
+            self.root = Document()
+            self.table = self.root.createElement('table')
+            self.table.setAttribute('xmlns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
+            self.table.setAttribute('id',str(id_))
+            self.table.setAttribute('name',name)
+            self.table.setAttribute('displayName',displayName)
+            self.table.setAttribute('ref',ref.ref)
+            self.table.setAttribute('totalsRowShown',str(totalsRowShown))
+            self.new_table(ref,name,header)
+
+    def _open(self,f):
+        self.root = parse(f)
+        self.table = self.root.getElementsByTagName('table')[0]
+        self.autoFilter = self.table.getElementsByTagName('autoFilter')[0]
+        self.tableColumns = self.table.getElementsByTagName('tableColumns')[0]
+        self.tableStyleInfo = self.table.getElementsByTagName('tableStyleInfo')[0]
 
     def new_table(self,ref,name,header):
         """
         ref: Ref # Start cell
         name : str # name of table
-        cols : list # name of columns (header)
+        header : list # name of columns in the first row (header)
         --------------------
         Ref('A1'),'table1',['Name','first Name']
         --------------------
@@ -1232,38 +1493,42 @@ class Table(OP):
         return tableColumn
 
 class Calc(OP):
-    def __init__(self,company,userName):
+    def __init__(self,company='',userName='',f=None,sheets=True):
         """create a new blank OpenXML Calc workbook without any sheets
         docProps/app.xml <-- new
         [Content_Types].xml <-- extend
         _rels/.rels <-- extend
         """
-        self.OP = dict()
-        self.OP['[Content_Types].xml'] = Content_Types()
-        self.OP['_rels/.rels'] = Relationships()
-        self.OP['docProps/app.xml'] = App(company)
-        self.OP['[Content_Types].xml'].new_Override('/docProps/app.xml')
-        self.OP['docProps/app.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('docProps/app.xml'))
-        self.OP['docProps/core.xml'] = Core(userName)
-        self.OP['[Content_Types].xml'].new_Override('/docProps/core.xml')
-        self.OP['docProps/core.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('docProps/core.xml'))
-        self.OP['xl/styles.xml'] = Styles()
-        self.OP['xl/workbook.xml'] = Workbook('xl')
-        self.OP['[Content_Types].xml'].new_Override('/xl/workbook.xml')
-        self.OP['xl/workbook.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('xl/workbook.xml'))
-        self.OP['xl/sharedStrings.xml'] = SharedStrings()
-        self.OP['xl/_rels/workbook.xml.rels'] = Relationships()
-        self.OP['xl/worksheets/sheet1.xml'] = Sheet()
-#        self.new_Table()
-#        self.OP['xl/worksheets/sheet2.xml'] = self.new_sheet()
-#        self.OP['xl/worksheets/sheet3.xml'] = self.new_sheet()
-#        self.rowID = 0
-#        self.activeSheet = self.OP['xl/worksheets/sheet1.xml']
-        self.OP['xl/styles.xml'].set_rId(self.OP['xl/_rels/workbook.xml.rels'].new_relationship('styles.xml'))
-        self.OP['[Content_Types].xml'].new_Override('/xl/styles.xml')
-        self.OP['xl/sharedStrings.xml'].set_rId(self.OP['xl/_rels/workbook.xml.rels'].new_relationship('sharedStrings.xml'))
-        self.OP['[Content_Types].xml'].new_Override('/xl/sharedStrings.xml')
-        self.tables = 0
+        if f:
+            self._open(f,sheets=sheets)
+        else:
+            self.OP = dict()
+            self.OP['[Content_Types].xml'] = Content_Types()
+            self.OP['_rels/.rels'] = Relationships()
+            self.OP['docProps/app.xml'] = App(company)
+            self.OP['[Content_Types].xml'].new_Override('/docProps/app.xml')
+            self.OP['docProps/app.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('docProps/app.xml'))
+            self.OP['docProps/core.xml'] = Core(userName)
+            self.OP['[Content_Types].xml'].new_Override('/docProps/core.xml')
+            self.OP['docProps/core.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('docProps/core.xml'))
+            self.OP['xl/styles.xml'] = Styles()
+            self.OP['xl/workbook.xml'] = Workbook('xl')
+            self.OP['[Content_Types].xml'].new_Override('/xl/workbook.xml')
+            self.OP['xl/workbook.xml'].set_rId(self.OP['_rels/.rels'].new_relationship('xl/workbook.xml'))
+            self.OP['xl/sharedStrings.xml'] = SharedStrings()
+            self.OP['xl/_rels/workbook.xml.rels'] = Relationships()
+            self.OP['xl/worksheets/sheet1.xml'] = Sheet()
+            self.OP['xl/styles.xml'].set_rId(self.OP['xl/_rels/workbook.xml.rels'].new_relationship('styles.xml'))
+            self.OP['[Content_Types].xml'].new_Override('/xl/styles.xml')
+            self.OP['xl/sharedStrings.xml'].set_rId(self.OP['xl/_rels/workbook.xml.rels'].new_relationship('sharedStrings.xml'))
+            self.OP['[Content_Types].xml'].new_Override('/xl/sharedStrings.xml')
+            self.tables = 0
+            self.myZIP = False
+
+    def __del__(self):
+        print 'Del'
+        if self.myZIP:
+            self.myZIP.close()
 
     def newSheet(self,name=None):
         """create an new Sheet in workbook
@@ -1320,8 +1585,32 @@ class Calc(OP):
 
     def read(self,ref):
         """read the contend of a cell (Ref) from the active Sheet"""
+        if type(ref) == str:
+            ref = Ref(ref)
+        if self.activeSheet.writeEngine == 'sharedStrings':
+            id_ = self.activeSheet.getSharedStringId(ref)
+            return self.OP['xl/sharedStrings.xml'].read(id_)
         return self.activeSheet.read(ref)
-        
+
+    def readLine(self,ref=None):
+        """read a hole line in activeSheet"""
+        if not ref:
+            ref = self.activeSheet.cursor
+        line = list()
+        cells = self.activeSheet.readLine(ref)
+        if not cells:
+            return None
+        for cell in cells:
+            if cell['t'] == None:
+                value = ''
+            elif cell['t'] == 'int':
+                value = cell['v']
+            elif cell['t'] == 's':
+                value = self.OP['xl/sharedStrings.xml'].read(cell['v'])
+            line.append(value)
+        self.activeSheet.cursor.walk('down')
+        return line
+
 ###########################
 ## conditional formating ##
 ###########################
@@ -1390,8 +1679,14 @@ class Calc(OP):
         c.setAttribute('s',s)
 
     def selectSheet(self,sheetName):
-        """select a sheet by name"""
+        """select a sheet by name and make to self.activeSheet"""
         self.OP['xl/workbook.xml'].set_activeTab(sheetName)
+        rId = self.OP['xl/workbook.xml'].getRId4Sheet(sheetName)
+        sheetPath = self.OP['xl/_rels/workbook.xml.rels'].getTarget(rId)
+        sheetPath = 'xl/%s' %sheetPath
+        if sheetPath not in self.OP:
+            self.OP[sheetPath] = Sheet(f=self.myZIP.open(sheetPath))
+        self.activeSheet = self.OP[sheetPath]
 
     def hideColume(self,min_,max_):
         """hide a column by columnID"""
@@ -1399,16 +1694,26 @@ class Calc(OP):
 
     def formatTable(self,ref,name,tableStyle=None):
         """create a Table with default formating settings
-        xl/printerSettings/printerSettings1.bin << new but ignore
-        xl/tables/table1.xml << new 1.
-        xl/worksheets/sheet1.xml << 2.
+
+        xl/printerSettings/printerSettings1.bin # <- new but ignore
+        
+        xl/tables/table1.xml # <- new 1.
+        
+        xl/worksheets/sheet1.xml # <- 2.
             <pageSetup paperSize="9" orientation="portrait" r:id="rId1"/> # <- ignore
+            
             <tableParts count="1">
+            
                 <tablePart r:id="rId2"/>
+                
             </tableParts>
-        xl/worksheets/_rels/sheet1.xml.rels << new 3.
-        [Content_Types].xml << 4.
+            
+        xl/worksheets/_rels/sheet1.xml.rels # <- new 3.
+        
+        [Content_Types].xml # <- 4.
+        
             <Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/>  # <- ignore
+            
             <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
         """
         if type(ref) == str:
@@ -1445,6 +1750,48 @@ class Calc(OP):
         """freeze row columnID"""
         self.activeSheet.add_frozen_row(columnID)
 
+    def selectCell(self,ref):
+        if type(ref) != Ref:
+            ref = Ref(ref)
+        self.activeSheet.selectCell(ref)
+
+    def _open(self,name,sheets=True):
+        """open an existing xlsx file"""
+        self.OP = dict()
+        self.myZIP = ZipFile(name,'r')
+        if True:
+#        with ZipFile(name,'r') as myZIP:
+            f = self.myZIP.open('[Content_Types].xml')
+            self.OP['[Content_Types].xml'] = Content_Types(f)
+            for override in self.OP['[Content_Types].xml'].getOverrides():
+#                print 'Open: %s' %override[1]
+                if override[0] == 'application/vnd.openxmlformats-officedocument.extended-properties+xml':
+                    self.OP['docProps/app.xml'] = App(f=self.myZIP.open('docProps/app.xml'))
+                elif override[0] == 'application/vnd.openxmlformats-package.core-properties+xml':
+                    self.OP['docProps/core.xml'] = Core(f=self.myZIP.open('docProps/core.xml'))
+                elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml':
+                    self.OP['xl/workbook.xml'] = Workbook(f=self.myZIP.open('xl/workbook.xml'))
+                elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml':
+                    self.OP['xl/styles.xml'] = Styles(f=self.myZIP.open('xl/styles.xml'))
+                elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml':
+                    self.OP['xl/sharedStrings.xml'] = SharedStrings(f=self.myZIP.open('xl/sharedStrings.xml'))
+                elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml':
+                    if sheets:
+                        name = override[1][1::]
+                        self.OP[name] = Sheet(f=self.myZIP.open(name))
+                elif override[0] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml':
+                    name = override[1][1::]
+                    self.OP[name] = Table(f=self.myZIP.open(name))
+            for i in self.myZIP.infolist():
+                if i.filename.endswith('.rels'):
+ #                   print 'Open: %s' %i.filename
+                    self.OP[i.filename] = Relationships(f=self.myZIP.open(i.filename))
+
+    def writeLine(self,ref,line):
+        if type(ref) != Ref:
+            ref = Ref(ref)
+        self.activeSheet.writeLine(ref,line)
+        
 class Expr(object):
     """Class to represent a expression(formula)"""
     def __init__(self,expr,extra=None):
@@ -1462,5 +1809,6 @@ class Expr(object):
             else:
                 d[key] = self.extra[key]
         self.str = self.expr %d
+
     def __str__(self):
         return self.str
