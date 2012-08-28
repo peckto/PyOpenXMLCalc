@@ -86,6 +86,7 @@ class OP(object):
             return False
 
 class Content_Types(OP):
+    sheets = 0
     def __init__(self,f=None):
         if f:
             self._open(f)
@@ -278,6 +279,8 @@ class App(OP):
 
 class Sheet(OP):
     def __init__(self,f=None):
+        Content_Types.sheets+=1
+        self.nr = Content_Types.sheets
         if f:
             self._open(f)
         else:
@@ -457,7 +460,7 @@ class Sheet(OP):
 
     def write(self,ref,text):
         self.dimensionRef.end.update(ref)
-        if not text:
+        if text == None:
             text = ''
         if type(text) != int:
             try:
@@ -1230,6 +1233,8 @@ class Ref(OP):
         else:
             return '%s%s' %(self._CN,self._rowID)
     def setRef(self,value):
+        if ':' in value:
+            raise TypeError('value seams to be type Sqref')
         if value.startswith('$'):
             self._fixCN = True
             value = value.replace('$','',1)
@@ -1380,33 +1385,43 @@ class Sqref(OP):
                 sq = start.split(':')
                 start = sq[0]
                 end = sq[1]
-            self.start = Ref(start)
-        else:
-            self.start = start
+        self.setStart(start)
         if end:
-            if type(end) != Ref:
-                self.end = Ref(end)
-            else:
-                self.end = end
+            self.setEnd(end)
         else:
-            self.end = Ref(self.start.ref)
+            self.setEnd(self._start.ref)
 
     def getRef(self):
-        return '%s%s:%s%s' %(self.start._CN,self.start._rowID,self.end._CN,self.end._rowID)
+        return '%s%s:%s%s' %(self._start._CN,self._start._rowID,self._end._CN,self._end._rowID)
     def setRef(self,value):
         ref = value.split(':')
-        self.start.setRef(ref[0])
+        self._start.setRef(ref[0])
         if len(ref) == 1:
-            self.end.setRef(ref[0])
+            self._end.setRef(ref[0])
         elif len(ref) == 2:
-            self.end.setRef(ref[1])
+            self._end.setRef(ref[1])
     ref = property(getRef,setRef)
 
+    def getStart(self):
+        return self._start
+    def setStart(self,start):
+        if type(start) != Ref:
+            start = Ref(start)
+        self._start = start
+    start = property(getStart,setStart)
+    def getEnd(self):
+        return self._end
+    def setEnd(self,end):
+        if type(end) != Ref:
+            end = Ref(end)
+        self._end = end
+    end = property(getEnd,setEnd)
+
     def count_rows(self):
-        return self.end.rowID - self.start.rowID +1
+        return self._end.rowID - self.start._rowID +1
 
     def count_cols(self):
-        return self.getInt4CN(self.end.CN) - self.getInt4CN(self.start.CN) +1
+        return self.getInt4CN(self._end.CN) - self.getInt4CN(self._start.CN) +1
     
 class Table(OP):
     def __init__(self,id_='',name='',sqref='',header='',displayName=None,totalsRowShown=0,tableStyle='TableStyleLight16',f=None):
@@ -1731,8 +1746,9 @@ class Calc(OP):
         header = self.activeSheet.readRow(ref)
         self.OP['xl/tables/table%s.xml' %self.tables] = Table(self.tables,name,sqref,header,tableStyle=tableStyle) # 1.
         self.OP['[Content_Types].xml'].new_Override('/xl/tables/table%s.xml' %self.tables) # 4.
-        self.OP['xl/worksheets/_rels/sheet1.xml.rels'] = Relationships() # 3.
-        rId = self.OP['xl/worksheets/_rels/sheet1.xml.rels'].new_relationship('../tables/table%s.xml' %self.tables) # 3.1
+        self.OP['xl/worksheets/_rels/sheet%s.xml.rels' %self.tables] = Relationships() # 3.
+        # self.activeSheet.nr buggy -> global counter, counts also sheets of other instances
+        rId = self.OP['xl/worksheets/_rels/sheet%s.xml.rels' %self.tables].new_relationship('../tables/table%s.xml' %self.tables) # 3.1
         self.activeSheet.addTablePart(rId) # 2.
         return sqref
 
@@ -1842,8 +1858,10 @@ class Expr(object):
             return
         d = dict()
         for key in self.extra:
-            if type(self.extra[key]) == Ref or type(self.extra[key]) == Sqref:
+            if type(self.extra[key]) == Ref:
                 d[key] = self.extra[key].ref
+            elif type(self.extra[key]) == Sqref:
+                d[key] = self.extra[key].start.ref
             elif type(self.extra[key]) == Expr:
                 d[key] = self.extra[key].str
             else:
